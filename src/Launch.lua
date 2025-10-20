@@ -78,6 +78,25 @@ function launch:OnInit()
 		end
 	end
 
+	-- Initialize HTTP API if in dev mode or explicitly enabled
+	if self.devMode or self.apiMode then
+		local httpAPI = nil
+		local apiErr
+		apiErr, httpAPI = PLoadModule("Modules/HttpAPI")
+		if not apiErr and httpAPI then
+			local apiPort = self.apiPort or 8080
+			local success = httpAPI.startServer(apiPort)
+			if success then
+				self.httpAPI = httpAPI
+				ConPrintf("HTTP API available at http://127.0.0.1:%d", apiPort)
+			else
+				ConPrintf("Failed to start HTTP API server")
+			end
+		else
+			ConPrintf("HTTP API module not available: %s", apiErr or "unknown error")
+		end
+	end
+
 	if not self.devMode and not firstRunFile then
 		-- Run a background update check if developer mode is off
 		self:CheckForUpdate(true)
@@ -98,6 +117,12 @@ function launch:CanExit()
 end
 
 function launch:OnExit()
+	-- Clean up HTTP API
+	if self.httpAPI then
+		self.httpAPI.stopServer()
+		self.httpAPI = nil
+	end
+	
 	if self.main and self.main.Shutdown then
 		PCall(self.main.Shutdown, self.main)
 	end
@@ -110,6 +135,14 @@ function launch:OnFrame()
 			if errMsg then
 				self:ShowErrMsg("In 'OnFrame': %s", errMsg)
 			end
+		end
+		
+		-- Update HTTP API with current build data
+		if self.httpAPI then
+			-- Update build reference
+			self.httpAPI.setBuild(self.main.modes and self.main.modes.BUILD)
+			-- Process HTTP requests
+			self.httpAPI.processRequests()
 		end
 	end
 	self.devModeAlt = self.devMode and IsKeyDown("ALT")
